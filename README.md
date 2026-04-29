@@ -2,12 +2,22 @@
 
 Homebridge plugin for the new **MotionAware** zones of the Philips Hue Bridge Pro. This plugin exposes virtual motion areas (created through wireless Zigbee signal analysis between Hue lights) as native motion sensors in HomeKit.
 
+## Features
+
+- Exposes each MotionAware zone as a native HomeKit motion sensor.
+- **Enabled characteristic**: Toggle motion detection on/off per zone directly from HomeKit. Reads and writes the `enabled` field on the Hue Bridge's `motion_area_configuration` resource, and stays in sync via the Hue EventStream. Uses a custom characteristic UUID so Apple Home and Siri won't confuse it with a standard power switch.
+
 ## Prerequisites
 
 - **Philips Hue Bridge Pro** (required for MotionAware feature).
 - At least 3-4 compatible Hue lights configured as a "Motion area" in the Philips Hue app.
 
 ## Installation
+
+### From GitHub (recommended for this fork)
+```bash
+cd /var/lib/homebridge && sudo npm install github:khiscott/homebridge-hue-motion-aware
+```
 
 ### Via Homebridge UI
 1. Go to the **Plugins** tab in your Homebridge UI.

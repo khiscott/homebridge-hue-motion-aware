@@ -1,14 +1,21 @@
-import { Service, PlatformAccessory } from "homebridge";
+import { Service, PlatformAccessory, CharacteristicValue } from "homebridge";
 import { HueMotionAwarePlatform } from "./platform";
+import { HueEnabled } from "./custom-characteristics";
 
 export class HueMotionSensorAccessory {
   private service: Service;
+  private enabled: boolean;
+  private readonly configId: string;
 
   constructor(
     private readonly platform: HueMotionAwarePlatform,
     private readonly accessory: PlatformAccessory,
     private readonly area: any,
+    private readonly motionAreaConfig: any,
   ) {
+    this.configId = motionAreaConfig.id;
+    this.enabled = motionAreaConfig.enabled ?? true;
+
     // Set accessory information
     this.accessory
       .getService(this.platform.Service.AccessoryInformation)!
@@ -24,8 +31,42 @@ export class HueMotionSensorAccessory {
     // Set the service name, this is what is displayed as the default name on the Home app
     this.service.setCharacteristic(this.platform.Characteristic.Name, accessory.displayName);
 
-    // Initialize state
+    // Initialize motion state
     const isPresent = area.motion?.motion === true;
     this.service.updateCharacteristic(this.platform.Characteristic.MotionDetected, isPresent);
+
+    // Add custom Enabled characteristic
+    if (!this.service.testCharacteristic("Enabled")) {
+      this.service.addCharacteristic(HueEnabled);
+    }
+
+    this.service.getCharacteristic("Enabled")!
+      .onGet(this.getEnabled.bind(this))
+      .onSet(this.setEnabled.bind(this));
+
+    this.service.updateCharacteristic("Enabled", this.enabled);
+  }
+
+  private getEnabled(): CharacteristicValue {
+    return this.enabled;
+  }
+
+  private async setEnabled(value: CharacteristicValue): Promise<void> {
+    const newValue = value as boolean;
+    this.platform.log.info(`Setting zone ${this.configId} enabled: ${newValue}`);
+    try {
+      await this.platform.setZoneEnabled(this.configId, newValue);
+      this.enabled = newValue;
+    } catch (error: any) {
+      this.platform.log.error(`Failed to set zone ${this.configId} enabled: ${error.message}`);
+      // Revert the HomeKit characteristic to actual state
+      this.service.updateCharacteristic("Enabled", this.enabled);
+      throw error; // Tell HomeKit the write failed
+    }
+  }
+
+  updateEnabled(value: boolean) {
+    this.enabled = value;
+    this.service.updateCharacteristic("Enabled", value);
   }
 }

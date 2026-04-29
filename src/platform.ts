@@ -18,8 +18,10 @@ export class HueMotionAwarePlatform implements DynamicPlatformPlugin {
 
   public readonly accessories: PlatformAccessory[] = [];
   private serviceToAccessoryMap = new Map<string, string>();
+  private configToAccessoryMap = new Map<string, HueMotionSensorAccessory>();
   private readonly hueAuth: HueAuth;
   private apiKey?: string;
+  private bridgeIp?: string;
 
   constructor(
     public readonly log: Logger,
@@ -41,9 +43,9 @@ export class HueMotionAwarePlatform implements DynamicPlatformPlugin {
   }
 
   async discoverDevices() {
-    const bridgeIp = this.config.bridgeIp;
+    this.bridgeIp = this.config.bridgeIp;
 
-    if (!bridgeIp) {
+    if (!this.bridgeIp) {
       this.log.error("Bridge IP missing in config.");
       return;
     }
@@ -52,7 +54,7 @@ export class HueMotionAwarePlatform implements DynamicPlatformPlugin {
     if (this.config.apiKey) {
       this.apiKey = this.config.apiKey;
     } else {
-      this.apiKey = await this.hueAuth.resolveApiKey(bridgeIp, this.log);
+      this.apiKey = await this.hueAuth.resolveApiKey(this.bridgeIp, this.log);
     }
 
     if (!this.apiKey) {
@@ -61,7 +63,7 @@ export class HueMotionAwarePlatform implements DynamicPlatformPlugin {
     }
 
     try {
-      const response = await axios.get(`https://${bridgeIp}/clip/v2/resource`, {
+      const response = await axios.get(`https://${this.bridgeIp}/clip/v2/resource`, {
         headers: { "hue-application-key": this.apiKey },
         httpsAgent: new (require("https").Agent)({ rejectUnauthorized: false }),
       });
@@ -87,11 +89,11 @@ export class HueMotionAwarePlatform implements DynamicPlatformPlugin {
       const activeUuids = new Set<string>();
 
       for (const [ownerId, services] of groups) {
-        const config = resources.find(
+        const motionAreaConfig = resources.find(
           (r: any) => r.type === "motion_area_configuration" && r.id === ownerId,
         );
 
-        const name = config?.name || `Motion Zone ${ownerId}`;
+        const name = motionAreaConfig?.name || `Motion Zone ${ownerId}`;
         const uuid = this.api.hap.uuid.generate(ownerId);
         activeUuids.add(uuid);
 
@@ -103,12 +105,14 @@ export class HueMotionAwarePlatform implements DynamicPlatformPlugin {
 
         if (existingAccessory) {
           this.log.info("Restoring existing accessory:", name);
-          new HueMotionSensorAccessory(this, existingAccessory, services[0]);
+          const handler = new HueMotionSensorAccessory(this, existingAccessory, services[0], motionAreaConfig);
+          this.configToAccessoryMap.set(ownerId, handler);
         } else {
           this.log.info("Adding new accessory:", name);
           const accessory = new this.api.platformAccessory(name, uuid);
           accessory.context.device = services[0];
-          new HueMotionSensorAccessory(this, accessory, services[0]);
+          const handler = new HueMotionSensorAccessory(this, accessory, services[0], motionAreaConfig);
+          this.configToAccessoryMap.set(ownerId, handler);
           this.api.registerPlatformAccessories("homebridge-hue-motion-aware", "HueMotionAware", [
             accessory,
           ]);
@@ -134,7 +138,7 @@ export class HueMotionAwarePlatform implements DynamicPlatformPlugin {
         });
       }
 
-      this.startEventStream(bridgeIp, this.apiKey);
+      this.startEventStream(this.bridgeIp, this.apiKey);
     } catch (error: any) {
       this.log.error("Failed to discover devices:", error.message);
     }
@@ -154,12 +158,22 @@ export class HueMotionAwarePlatform implements DynamicPlatformPlugin {
         for (const message of messages) {
           if (message.type === "update") {
             for (const data of message.data) {
+              // Handle motion updates from motion services
               const accessoryUuid = this.serviceToAccessoryMap.get(data.id);
               if (accessoryUuid) {
                 const isMotion = data.motion?.motion;
                 if (isMotion !== undefined) {
                   this.log.debug(`Motion update for ${data.id}: ${isMotion}`);
                   this.updateAccessoryPresence(accessoryUuid, isMotion);
+                }
+              }
+
+              // Handle enabled updates from motion_area_configuration
+              if (data.type === "motion_area_configuration" && data.enabled !== undefined) {
+                const handler = this.configToAccessoryMap.get(data.id);
+                if (handler) {
+                  this.log.debug(`Enabled update for ${data.id}: ${data.enabled}`);
+                  handler.updateEnabled(data.enabled);
                 }
               }
             }
@@ -182,7 +196,15 @@ export class HueMotionAwarePlatform implements DynamicPlatformPlugin {
       service?.updateCharacteristic(this.Characteristic.MotionDetected, isMotion);
     }
   }
+
+  async setZoneEnabled(configId: string, enabled: boolean): Promise<void> {
+    await axios.put(
+      `https://${this.bridgeIp}/clip/v2/resource/motion_area_configuration/${configId}`,
+      { enabled },
+      {
+        headers: { "hue-application-key": this.apiKey },
+        httpsAgent: new (require("https").Agent)({ rejectUnauthorized: false }),
+      },
+    );
+  }
 }
-
-
-
