@@ -1,6 +1,6 @@
 {
   "name": "homebridge-hue-motion-aware",
-  "version": "1.0.11",
+  "version": "1.1.0",
   "description": "Homebridge plugin for Philips Hue MotionAware zones",
   "keywords": [
     "homebridge-plugin",
@@ -9,7 +9,10 @@
     "philips-hue"
   ],
   "license": "MIT",
-  "author": "Antigravity",
+  "author": "Kevin Hiscott",
+  "contributors": [
+    "Antigravity"
+  ],
   "files": [
     "dist",
     "config.schema.json",
@@ -39,6 +42,9 @@
     "oxlint": "latest",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
+  },
+  "peerDependencies": {
+    "homebridge": ">=1.6.0"
   },
   "engines": {
     "homebridge": ">=1.6.0",
