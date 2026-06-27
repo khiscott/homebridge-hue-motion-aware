@@ -19,6 +19,12 @@
         "type": "string",
         "description": "Your Philips Hue application key (leave empty to start pairing).",
         "placeholder": "Get this via pairing process"
+      },
+      "useStandardActive": {
+        "title": "Expose toggle as standard Active characteristic",
+        "type": "boolean",
+        "default": false,
+        "description": "Off (default): the per-zone enable/disable toggle uses a private custom characteristic that stays hidden from Apple Home and Siri but remains usable in HomeKit automations and the Homebridge REST API. On: the toggle uses the standard HAP Active characteristic, making it visible in Apple Home and mappable as an entity in Home Assistant via the HomeKit Controller integration."
       }
     }
   }

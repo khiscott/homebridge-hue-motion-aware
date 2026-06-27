@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2026-06-27
+- Added `useStandardActive` config option (default `false`) to choose which HAP characteristic backs the per-zone enable/disable toggle. When `false`, the existing private custom characteristic is used (hidden from Apple Home and Siri, still usable in HomeKit automations and the Homebridge REST API). When `true`, the standard HAP `Active` characteristic is used, making the toggle visible in Apple Home and mappable as an entity in Home Assistant via the HomeKit Controller integration.
+
 ## [1.0.11] - 2026-02-02
 - Added `npm run test-connection` and `npm run debug-motion` scripts for easier debugging.
 - Updated README with the new script commands.

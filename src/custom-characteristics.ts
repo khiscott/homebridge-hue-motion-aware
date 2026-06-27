@@ -20,3 +20,23 @@ export function registerCustomCharacteristics(api: API) {
     }
   };
 }
+
+/**
+ * Resolves which HAP characteristic backs the zone enabled/disabled toggle.
+ *
+ * - `useStandardActive: false` (default): the private custom "Enabled" BOOL
+ *   characteristic above. Invisible to Apple Home / Siri, but still
+ *   readable/writable via HomeKit automations and the Homebridge REST API.
+ * - `useStandardActive: true`: the standard HAP `Active` characteristic
+ *   (UUID 000000B0-..., UINT8 values 0/1). Visible in Apple Home and mappable
+ *   as an entity in Home Assistant via the HomeKit Controller integration.
+ *
+ * Callers must convert their internal boolean state to the matching value type
+ * (boolean for the custom characteristic, 0/1 for `Active`).
+ */
+export function resolveEnabledCharacteristic(
+  api: API,
+  useStandardActive: boolean,
+): WithUUID<new () => Characteristic> {
+  return useStandardActive ? api.hap.Characteristic.Active : HueEnabled;
+}
