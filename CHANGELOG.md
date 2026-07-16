@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-07-15
+- `useStandardActive: true` now exposes the enable/disable toggle as a separate HAP Switch service (`On` characteristic) instead of adding `Active` to the MotionSensor service. `Active` on a MotionSensor is non-conformant per the HAP spec and Home Assistant's HomeKit Controller silently ignored it; a dedicated Switch service maps to a controllable entity in both Apple Home and Home Assistant. A stale `Active` characteristic left on cached accessories by 1.2.0 is removed automatically. The default (`false`) mode is unchanged.
+
 ## [1.2.0] - 2026-06-27
 - Added `useStandardActive` config option (default `false`) to choose which HAP characteristic backs the per-zone enable/disable toggle. When `false`, the existing private custom characteristic is used (hidden from Apple Home and Siri, still usable in HomeKit automations and the Homebridge REST API). When `true`, the standard HAP `Active` characteristic is used, making the toggle visible in Apple Home and mappable as an entity in Home Assistant via the HomeKit Controller integration.
 

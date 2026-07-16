@@ -8,8 +8,16 @@ import {
 import { HueMotionAwarePlatform } from "./platform";
 import { HueEnabled, resolveEnabledCharacteristic } from "./custom-characteristics";
 
+/** Subtype for the dedicated Switch service hosting the enabled toggle
+ *  (`useStandardActive: true` mode), so it's distinguishable from the
+ *  MotionSensor service and any other Switch. */
+const TOGGLE_SUBTYPE = "zone-enabled";
+
 export class HueMotionSensorAccessory {
   private service: Service;
+  /** Service hosting the enabled toggle: the MotionSensor service itself
+   *  (custom characteristic mode) or a dedicated Switch service. */
+  private toggleService: Service;
   private enabled: boolean;
   private readonly configId: string;
   private readonly useStandardActive: boolean;
@@ -48,25 +56,46 @@ export class HueMotionSensorAccessory {
     const isPresent = area.motion?.motion === true;
     this.service.updateCharacteristic(this.platform.Characteristic.MotionDetected, isPresent);
 
-    // If the user switched modes, drop the toggle characteristic from the
-    // other mode so a single accessory doesn't end up with two toggles.
-    const staleCharacteristic = this.useStandardActive
-      ? HueEnabled
-      : this.platform.Characteristic.Active;
-    if (this.hasCharacteristic(staleCharacteristic)) {
-      this.service.removeCharacteristic(this.service.getCharacteristic(staleCharacteristic)!);
+    // `Active` on the MotionSensor service is no longer used in any mode
+    // (v1.2.0 placed it there; non-conformant per HAP spec, and Home
+    // Assistant silently ignores it) — drop it from cached accessories.
+    this.removeCharacteristicIfPresent(this.service, this.platform.Characteristic.Active);
+
+    if (this.useStandardActive) {
+      // Standard mode: host the toggle as `On` on a dedicated Switch service,
+      // which both Apple Home and Home Assistant map to a controllable entity.
+      // Drop the custom characteristic if this accessory previously ran in
+      // default mode. The Switch service includes `On` by default.
+      this.removeCharacteristicIfPresent(this.service, HueEnabled);
+      this.toggleService =
+        this.accessory.getServiceById(this.platform.Service.Switch, TOGGLE_SUBTYPE) ||
+        this.accessory.addService(
+          this.platform.Service.Switch,
+          `${accessory.displayName} Enabled`,
+          TOGGLE_SUBTYPE,
+        );
+    } else {
+      // Default mode (unchanged): custom characteristic on the MotionSensor
+      // service. If the user switched back from standard mode, the toggle was
+      // a whole extra service there — remove it, not just a characteristic.
+      const staleSwitch = this.accessory.getServiceById(
+        this.platform.Service.Switch,
+        TOGGLE_SUBTYPE,
+      );
+      if (staleSwitch) {
+        this.accessory.removeService(staleSwitch);
+      }
+      this.toggleService = this.service;
+      if (!this.hasCharacteristic(this.toggleService, this.enabledCharacteristic)) {
+        this.toggleService.addCharacteristic(this.enabledCharacteristic);
+      }
     }
 
-    // Add the enabled toggle characteristic (custom "Enabled" or standard "Active")
-    if (!this.hasCharacteristic(this.enabledCharacteristic)) {
-      this.service.addCharacteristic(this.enabledCharacteristic);
-    }
-
-    this.service.getCharacteristic(this.enabledCharacteristic)!
+    this.toggleService.getCharacteristic(this.enabledCharacteristic)!
       .onGet(this.getEnabled.bind(this))
       .onSet(this.setEnabled.bind(this));
 
-    this.service.updateCharacteristic(this.enabledCharacteristic, this.toCharacteristicValue(this.enabled));
+    this.toggleService.updateCharacteristic(this.enabledCharacteristic, this.enabled);
   }
 
   /**
@@ -74,32 +103,29 @@ export class HueMotionSensorAccessory {
    * `WithUUID<typeof Characteristic>` type, which the custom characteristic
    * doesn't satisfy, so we match against the service's characteristics directly.
    */
-  private hasCharacteristic(characteristic: WithUUID<new () => Characteristic>): boolean {
-    return this.service.characteristics.some((existing) => existing.UUID === characteristic.UUID);
+  private hasCharacteristic(
+    service: Service,
+    characteristic: WithUUID<new () => Characteristic>,
+  ): boolean {
+    return service.characteristics.some((existing) => existing.UUID === characteristic.UUID);
   }
 
-  /**
-   * Maps the internal boolean state to the value type expected by the active
-   * characteristic: a boolean for the custom "Enabled" characteristic, or the
-   * 0/1 integer constants for the standard HAP "Active" characteristic.
-   */
-  private toCharacteristicValue(enabled: boolean): CharacteristicValue {
-    if (this.useStandardActive) {
-      return enabled
-        ? this.platform.Characteristic.Active.ACTIVE
-        : this.platform.Characteristic.Active.INACTIVE;
+  private removeCharacteristicIfPresent(
+    service: Service,
+    characteristic: WithUUID<new () => Characteristic>,
+  ): void {
+    const existing = service.characteristics.find((c) => c.UUID === characteristic.UUID);
+    if (existing) {
+      service.removeCharacteristic(existing);
     }
-    return enabled;
   }
 
   private getEnabled(): CharacteristicValue {
-    return this.toCharacteristicValue(this.enabled);
+    return this.enabled;
   }
 
   private async setEnabled(value: CharacteristicValue): Promise<void> {
-    const newValue = this.useStandardActive
-      ? value === this.platform.Characteristic.Active.ACTIVE
-      : (value as boolean);
+    const newValue = value as boolean;
     this.platform.log.info(`Setting zone ${this.configId} enabled: ${newValue}`);
     try {
       await this.platform.setZoneEnabled(this.configId, newValue);
@@ -107,13 +133,13 @@ export class HueMotionSensorAccessory {
     } catch (error: any) {
       this.platform.log.error(`Failed to set zone ${this.configId} enabled: ${error.message}`);
       // Revert the HomeKit characteristic to actual state
-      this.service.updateCharacteristic(this.enabledCharacteristic, this.toCharacteristicValue(this.enabled));
+      this.toggleService.updateCharacteristic(this.enabledCharacteristic, this.enabled);
       throw error; // Tell HomeKit the write failed
     }
   }
 
   updateEnabled(value: boolean) {
     this.enabled = value;
-    this.service.updateCharacteristic(this.enabledCharacteristic, this.toCharacteristicValue(value));
+    this.toggleService.updateCharacteristic(this.enabledCharacteristic, value);
   }
 }
